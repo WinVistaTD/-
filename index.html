@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>锐科云工具网</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+    <style>
+        .top-logo { width: 96px; height: 96px; margin: 0 auto 12px; border-radius: 50%; }
+        .nav-icon { width: 64px; height: 64px; object-fit: contain; }
+        
+        /* 夜间模式样式 */
+        .night-mode {
+            background-color: #000000 !important;
+            color: #ffffff !important;
+        }
+        
+        .night-mode,
+        .night-mode *:not(img):not(svg) {
+            color: #ffffff !important;
+        }
+        
+        .night-mode svg {
+            filter: invert(1) hue-rotate(180deg);
+        }
+        
+        .night-mode input,
+        .night-mode .card {
+            background-color: #1a1a1a !important;
+            border-color: #333 !important;
+            color: #ffffff !important;
+        }
+        
+        .night-mode button {
+            background-color: #333 !important;
+            color: #ffffff !important;
+        }
+        
+        .night-mode img {
+            filter: none !important;
+        }
+
+        /* 分区样式 */
+        .category-section {
+            margin-bottom: 3rem;
+        }
+        
+        .category-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #3b82f6;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .night-mode .category-title {
+            border-bottom-color: #60a5fa;
+        }
+
+        .category-icon {
+            width: 24px;
+            height: 24px;
+        }
+
+        /* 工具数量标签 */
+        .tool-count {
+            background: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+
+        .night-mode .tool-count {
+            background: #60a5fa;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 p-4 text-gray-800 transition-colors duration-300">
+    <div class="max-w-6xl mx-auto">
+        <!-- 顶部Logo和标题 -->
+        <div class="text-center mb-8">
+            <img id="site-logo" class="top-logo" src="https://i.imgs.ovh/2026/01/16/yLdkK4.jpeg" alt="锐科云工具网">
+            <h1 class="text-3xl font-bold mb-2">锐科云工具网</h1>
+            <p class="text-gray-500 mb-8">10+小站长工具，助力站长加油！</p>
+        </div>
+
+        <!-- 搜索框 -->
+        <div class="relative max-w-md mx-auto mb-8 flex gap-2">
+            <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            <input id="search-input" placeholder="搜索工具名称或描述..." class="w-full pl-10 pr-4 py-3 rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="search-button" class="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">搜索</button>
+        </div>
+
+        <!-- 分区容器 -->
+        <div id="categories-container">
+            加载中...
+        </div>
+
+        <!-- 夜间模式按钮 -->
+        <button id="night-toggle" class="fixed bottom-4 right-4 w-12 h-12 rounded-full bg-gray-200 shadow-lg flex items-center justify-center">
+            <i class="fa fa-moon-o"></i>
+        </button>
+    </div>
+
+    <script>
+        // 存储原始配置数据
+        let originalConfig = null;
+
+        // 加载配置文件
+        fetch('https://gh-proxy.com/https://github.com/WinVistaTD/TVlive/raw/main/config.json')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(config => {
+                originalConfig = config;
+                
+                // 设置站点信息
+                document.getElementById('site-logo').src = config.site.avatar;
+                document.querySelector('h1').textContent = config.site.nickname;
+                document.querySelector('p').textContent = config.site.motto;
+
+                // 处理分区数据（合并相同分区）
+                const processedCategories = processCategories(config.categories);
+                
+                // 渲染分区
+                renderCategories(processedCategories);
+            })
+            .catch(error => {
+                console.error('加载配置文件失败:', error);
+                document.getElementById('categories-container').innerHTML = '<p class="text-red-500">加载配置失败，请检查config.json文件</p>';
+            });
+
+        // 处理分区数据，合并相同分区
+        function processCategories(categories) {
+            const categoryMap = new Map();
+            
+            categories.forEach(category => {
+                const categoryName = category.name;
+                
+                if (categoryMap.has(categoryName)) {
+                    // 如果分区已存在，合并工具
+                    const existingCategory = categoryMap.get(categoryName);
+                    existingCategory.tools = [...existingCategory.tools, ...category.tools];
+                } else {
+                    // 如果分区不存在，创建新分区
+                    categoryMap.set(categoryName, {
+                        name: category.name,
+                        icon: category.icon,
+                        tools: [...category.tools]
+                    });
+                }
+            });
+            
+            // 转换为数组并限制最多100个分区
+            const result = Array.from(categoryMap.values()).slice(0, 100);
+            
+            console.log(`处理后的分区数量: ${result.length}`);
+            result.forEach(cat => {
+                console.log(`分区 "${cat.name}" 包含 ${cat.tools.length} 个工具`);
+            });
+            
+            return result;
+        }
+
+        // 搜索功能
+        function performSearch() {
+            const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+            
+            if (!originalConfig) {
+                return;
+            }
+
+            if (searchTerm === '') {
+                // 如果搜索词为空，恢复显示原始配置
+                const processedCategories = processCategories(originalConfig.categories);
+                renderCategories(processedCategories);
+                return;
+            }
+
+            // 深拷贝配置数据
+            const searchConfig = JSON.parse(JSON.stringify(originalConfig));
+            
+            // 遍历每个分类，过滤工具
+            searchConfig.categories.forEach(category => {
+                category.tools = category.tools.filter(tool => {
+                    // 检查工具名称是否包含搜索词
+                    const nameMatch = tool.name.toLowerCase().includes(searchTerm);
+                    // 检查工具描述是否包含搜索词
+                    const descMatch = tool.desc && tool.desc.toLowerCase().includes(searchTerm);
+                    
+                    return nameMatch || descMatch;
+                });
+            });
+
+            // 过滤掉没有工具的分类
+            searchConfig.categories = searchConfig.categories.filter(category => category.tools.length > 0);
+
+            // 处理分区数据
+            const processedCategories = processCategories(searchConfig.categories);
+            
+            // 渲染搜索结果
+            renderCategories(processedCategories);
+        }
+
+        // 渲染分区
+        function renderCategories(categories) {
+            const container = document.getElementById('categories-container');
+            
+            if (categories.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-8">未找到匹配的工具</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            categories.forEach(category => {
+                const section = document.createElement('div');
+                section.className = 'category-section';
+
+                // 分区标题（包含工具数量）
+                const title = document.createElement('div');
+                title.className = 'category-title';
+                title.innerHTML = `
+                    <img src="${category.icon}" class="category-icon" alt="${category.name}" onerror="this.style.display='none'">
+                    <span>${category.name}</span>
+                    <span class="tool-count">${category.tools.length}</span>
+                `;
+                section.appendChild(title);
+
+                // 工具网格
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
+
+                category.tools.forEach(tool => {
+                    const card = document.createElement('a');
+                    card.href = tool.url;
+                    card.target = '_blank';
+                    card.className = 'card flex flex-col items-center p-4 rounded-lg bg-white shadow hover:scale-105 transition-transform duration-200 hover:shadow-lg border border-gray-200';
+                    card.title = tool.name;
+
+                    // 图标渲染
+                    let iconHtml = '';
+                    if (tool.icon && tool.icon.match(/\.(png|jpg|jpeg|svg|gif|webp)$/i)) {
+                        if (tool.icon.includes('.svg')) {
+                            iconHtml = `<div class="svg-container"><img src="${tool.icon}" class="nav-icon" alt="${tool.name}" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiMzYjgzZjYiLz48cGF0aCBkPSJNMzIgMThMNDIgMjhaMjIgMjhMMzIgMThaIiBmaWxsPSJ3aGl0ZSIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iNDYiIHI9IjgiIGZpbGw9IndoaXRlIi8+PC9zdmc+'"></div>`;
+                        } else {
+                            iconHtml = `<img src="${tool.icon}" class="nav-icon" alt="${tool.name}" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiMzYjgzZjYiLz48cGF0aCBkPSJNMzIgMThMNDIgMjhaMjIgMjhMMzIgMThaIiBmaWxsPSJ3aGl0ZSIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iNDYiIHI9IjgiIGZpbGw9IndoaXRlIi8+PC9zdmc+'">`;
+                        }
+                    } else {
+                        const iconClass = tool.icon || 'fa-link';
+                        iconHtml = `<i class="fa ${iconClass} text-3xl text-blue-500"></i>`;
+                    }
+
+                    card.innerHTML = `
+                        ${iconHtml}
+                        <span class="mt-2 font-medium text-sm text-center">${tool.name}</span>
+                        ${tool.desc ? `<span class="mt-1 text-xs text-gray-500 text-center">${tool.desc}</span>` : ''}
+                    `;
+                    grid.appendChild(card);
+                });
+
+                section.appendChild(grid);
+                container.appendChild(section);
+            });
+
+            // 显示分区统计
+            const totalCategories = categories.length;
+            const totalTools = categories.reduce((sum, cat) => sum + cat.tools.length, 0);
+            
+            const stats = document.createElement('div');
+            stats.className = 'text-center text-sm text-gray-500 mb-4';
+            stats.innerHTML = `共 ${totalCategories} 个分区，${totalTools} 个工具`;
+            container.insertBefore(stats, container.firstChild);
+        }
+
+        // 夜间模式切换函数
+        function toggleNightMode() {
+            const body = document.body;
+            const isNightMode = body.classList.contains('night-mode');
+            const toggleBtn = document.getElementById('night-toggle');
+            
+            if (isNightMode) {
+                // 切换到日间模式
+                body.classList.remove('night-mode');
+                localStorage.setItem('nightMode', 'false');
+                toggleBtn.innerHTML = '<i class="fa fa-moon-o"></i>';
+                toggleBtn.classList.remove('bg-gray-700', 'text-white');
+                toggleBtn.classList.add('bg-gray-200');
+            } else {
+                // 切换到夜间模式
+                body.classList.add('night-mode');
+                localStorage.setItem('nightMode', 'true');
+                toggleBtn.innerHTML = '<i class="fa fa-sun-o"></i>';
+                toggleBtn.classList.remove('bg-gray-200');
+                toggleBtn.classList.add('bg-gray-700', 'text-white');
+            }
+        }
+
+        // 初始化夜间模式
+        function initNightMode() {
+            const saved = localStorage.getItem('nightMode');
+            const body = document.body;
+            const toggleBtn = document.getElementById('night-toggle');
+            
+            if (saved === 'true') {
+                // 应用夜间模式
+                body.classList.add('night-mode');
+                toggleBtn.innerHTML = '<i class="fa fa-sun-o"></i>';
+                toggleBtn.classList.remove('bg-gray-200');
+                toggleBtn.classList.add('bg-gray-700', 'text-white');
+            } else {
+                // 确保是日间模式
+                body.classList.remove('night-mode');
+                toggleBtn.innerHTML = '<i class="fa fa-moon-o"></i>';
+                toggleBtn.classList.remove('bg-gray-700', 'text-white');
+                toggleBtn.classList.add('bg-gray-200');
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化夜间模式
+            initNightMode();
+            
+            // 绑定夜间模式切换事件
+            const nightToggle = document.getElementById('night-toggle');
+            nightToggle.addEventListener('click', toggleNightMode);
+            
+            // 绑定搜索按钮点击事件
+            const searchButton = document.getElementById('search-button');
+            searchButton.addEventListener('click', performSearch);
+            
+            // 绑定搜索输入框回车事件
+            const searchInput = document.getElementById('search-input');
+            searchInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    performSearch();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
