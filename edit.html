@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地导航编辑器</title>
+    <style>
+        *{box-sizing:border-box;font-family:system-ui,sans-serif}
+        body{margin:0;padding:20px;background:#f6f7f9}
+        .container{max-width:900px;margin:0 auto;background:#fff;padding:24px;border-radius:12px}
+        input, select{width:100%;padding:10px;margin:6px 0;border:1px solid #ddd;border-radius:6px}
+        button{padding:10px 16px;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;margin:5px 0}
+        .btn-danger{background:#ef4444}
+        .btn-success{background:#10b981}
+        .btn-warning{background:#f59e0b}
+        .btn-info{background:#06b6d4}
+        .item{display:flex;gap:8px;margin:8px 0;align-items:center}
+        .item input, .item select{flex:1}
+        .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content-center}
+        .modal .box{background:#fff;padding:24px;border-radius:12px;width:90%;max-width:400px}
+        .stats{background:#f8fafc;padding:10px;border-radius:6px;margin:10px 0;font-size:14px}
+        
+        /* 分区样式 */
+        .category-tag {
+            display: inline-flex;
+            align-items: center;
+            background: #e2e8f0;
+            padding: 6px 12px;
+            margin: 5px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .category-remove {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            margin-left: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            line-height: 1;
+        }
+        .category-edit {
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            margin-left: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            line-height: 1;
+        }
+        
+        /* 编辑模式样式 */
+        .category-edit-input {
+            width: 120px;
+            padding: 4px 8px;
+            border: 1px solid #3b82f6;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+
+        /* 文件上传样式 */
+        .file-input {
+            display: none;
+        }
+        .file-label {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #06b6d4;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+        .file-label:hover {
+            background: #0891b2;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>本地导航编辑器</h2>
+
+    <!-- 导入/导出控制 -->
+    <div style="margin:15px 0;padding:15px;background:#f0f9ff;border-radius:8px;">
+        <h4>数据管理</h4>
+        <label class="file-label">
+            📁 导入 config.json
+            <input type="file" id="import-file" class="file-input" accept=".json" onchange="importConfig(this.files[0])">
+        </label>
+        <button onclick="exportConfig()" class="btn-info">📤 导出当前配置</button>
+        <button onclick="resetToDefault()" class="btn-danger">🔄 重置为默认</button>
+    </div>
+
+    <input id="avatar" placeholder="头像URL" value="">
+    <input id="nickname" placeholder="站点名称" value="">
+    <input id="motto" placeholder="个性签名" value="">
+
+    <h3>导航项管理</h3>
+    
+    <!-- 分区管理 -->
+    <div style="margin:15px 0;padding:15px;background:#f8fafc;border-radius:8px;">
+        <h4>分区设置</h4>
+        <div id="categories-control">
+            <input id="new-category" placeholder="新分区名称" style="width:200px;display:inline-block">
+            <button onclick="addCategory()" class="btn-success">添加分区</button>
+            <div id="categories-list" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <!-- 导航项列表 -->
+    <div id="items"></div>
+
+    <button onclick="addItem()">添加导航项</button>
+    <button onclick="checkPasswordAndSave()">保存并下载 config.json</button>
+    
+    <div class="stats" id="stats">统计：1个分区，0个工具</div>
+</div>
+
+<!-- 密码弹窗 -->
+<div class="modal" id="pwdModal">
+    <div class="box">
+        <h3>请输入密码</h3>
+        <input id="pwdInput" type="password" placeholder="密码">
+        <button onclick="checkPassword()">确认</button>
+        <button onclick="closePwd()">取消</button>
+    </div>
+</div>
+
+<script>
+    // ====================== 本地写死密码 ======================
+    const PASSWORD = "123456";
+
+    // 初始化数据 - 默认只有一个"默认"分区，没有导航项
+    let categories = ["默认"];
+    let navList = [];
+    let editingCategoryIndex = -1; // 当前正在编辑的分区索引
+
+    // 渲染分区列表
+    function renderCategories() {
+        const el = document.getElementById("categories-list");
+        el.innerHTML = categories.map((cat, i) => {
+            if (i === editingCategoryIndex) {
+                // 编辑模式
+                return `
+                    <div class="category-tag">
+                        <input type="text" class="category-edit-input" value="${cat}" 
+                               id="edit-category-${i}" onkeypress="handleCategoryEditKeypress(event, ${i})">
+                        <button class="category-edit" onclick="saveCategoryEdit(${i})">✓</button>
+                        <button class="category-remove" onclick="cancelCategoryEdit()">×</button>
+                    </div>
+                `;
+            } else {
+                // 显示模式
+                return `
+                    <div class="category-tag">
+                        ${cat}
+                        <button class="category-edit" onclick="startCategoryEdit(${i})">✎</button>
+                        ${categories.length > 1 ? `<button class="category-remove" onclick="removeCategory(${i})">×</button>` : ''}
+                    </div>
+                `;
+            }
+        }).join('');
+        
+        // 如果是编辑模式，聚焦输入框
+        if (editingCategoryIndex !== -1) {
+            setTimeout(() => {
+                const input = document.getElementById(`edit-category-${editingCategoryIndex}`);
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 10);
+        }
+    }
+
+    // 开始编辑分区
+    function startCategoryEdit(index) {
+        editingCategoryIndex = index;
+        renderCategories();
+    }
+
+    // 取消编辑
+    function cancelCategoryEdit() {
+        editingCategoryIndex = -1;
+        renderCategories();
+    }
+
+    // 保存分区编辑
+    function saveCategoryEdit(index) {
+        const input = document.getElementById(`edit-category-${index}`);
+        const newName = input.value.trim();
+        
+        if (newName && newName !== categories[index]) {
+            // 检查是否重名
+            if (categories.some((cat, i) => i !== index && cat === newName)) {
+                alert("分区名称已存在！");
+                return;
+            }
+            
+            const oldName = categories[index];
+            categories[index] = newName;
+            
+            // 更新所有使用该分区的工具
+            navList.forEach(item => {
+                if (item.category === oldName) {
+                    item.category = newName;
+                }
+            });
+        }
+        
+        editingCategoryIndex = -1;
+        renderCategories();
+        renderItems();
+    }
+
+    // 处理编辑时的按键事件
+    function handleCategoryEditKeypress(event, index) {
+        if (event.key === 'Enter') {
+            saveCategoryEdit(index);
+        } else if (event.key === 'Escape') {
+            cancelCategoryEdit();
+        }
+    }
+
+    // 渲染导航项列表
+    function renderItems() {
+        const el = document.getElementById("items");
+        el.innerHTML = "";
+        navList.forEach((item, i) => {
+            const div = document.createElement("div");
+            div.className = "item";
+            div.innerHTML = `
+                <select onchange="update(${i},'category',this.value)" style="flex: 0.8;">
+                    ${categories.map(cat => 
+                        `<option value="${cat}" ${item.category === cat ? 'selected' : ''}>${cat}</option>`
+                    ).join('')}
+                </select>
+                <input placeholder="工具名称" value="${item.name}" oninput="update(${i},'name',this.value)" style="flex: 1.2;">
+                <input placeholder="图标URL或fa图标" value="${item.icon}" oninput="update(${i},'icon',this.value)">
+                <input placeholder="链接URL" value="${item.url}" oninput="update(${i},'url',this.value)">
+                <input placeholder="描述" value="${item.desc || ''}" oninput="update(${i},'desc',this.value)" style="flex: 1.2;">
+                <button class="btn-danger" onclick="del(${i})" style="flex: 0.3;">删除</button>
+            `;
+            el.appendChild(div);
+        });
+        updateStats();
+    }
+
+    // 更新统计信息
+    function updateStats() {
+        const categoryCount = new Set(navList.map(item => item.category)).size;
+        const toolCount = navList.length;
+        document.getElementById("stats").innerHTML = 
+            `统计：${categoryCount}个分区，${toolCount}个工具（分区限制：最多100个）`;
+    }
+
+    function update(i, k, v) { 
+        navList[i][k] = v; 
+        updateStats();
+    }
+    
+    function addItem() { 
+        navList.push({
+            name: "", 
+            icon: "", 
+            url: "", 
+            desc: "",
+            category: categories[0] || "默认"
+        }); 
+        renderItems(); 
+    }
+    
+    function del(i) { 
+        navList.splice(i, 1); 
+        renderItems(); 
+    }
+
+    // 分区管理
+    function addCategory() {
+        const newCat = document.getElementById("new-category").value.trim();
+        if (newCat) {
+            if (categories.includes(newCat)) {
+                alert("分区名称已存在！");
+                return;
+            }
+            categories.push(newCat);
+            renderCategories();
+            renderItems();
+            document.getElementById("new-category").value = "";
+        }
+    }
+
+    function removeCategory(index) {
+        if (categories.length > 1) {
+            const catToRemove = categories[index];
+            // 将该分区的工具移到第一个分区
+            navList.forEach(item => {
+                if (item.category === catToRemove) {
+                    item.category = categories[0];
+                }
+            });
+            categories.splice(index, 1);
+            renderCategories();
+            renderItems();
+            
+            // 如果正在编辑的分区被删除，取消编辑状态
+            if (editingCategoryIndex === index) {
+                editingCategoryIndex = -1;
+            }
+        } else {
+            alert("至少需要保留一个分区");
+        }
+    }
+
+    // ====================== 导入/导出功能 ======================
+
+    // 导入配置文件
+    function importConfig(file) {
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const config = JSON.parse(e.target.result);
+                loadConfig(config);
+                alert('配置文件导入成功！');
+            } catch (error) {
+                alert('配置文件格式错误，请检查文件内容');
+                console.error('导入错误:', error);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // 加载配置数据
+    function loadConfig(config) {
+        // 清空当前数据
+        categories = ["默认"];
+        navList = [];
+        
+        // 加载站点信息
+        if (config.site) {
+            document.getElementById('avatar').value = config.site.avatar || '';
+            document.getElementById('nickname').value = config.site.nickname || '';
+            document.getElementById('motto').value = config.site.motto || '';
+        }
+        
+        // 加载分区和工具
+        if (config.categories && Array.isArray(config.categories)) {
+            categories = [];
+            config.categories.forEach(category => {
+                if (category.name && !categories.includes(category.name)) {
+                    categories.push(category.name);
+                }
+                
+                if (category.tools && Array.isArray(category.tools)) {
+                    category.tools.forEach(tool => {
+                        navList.push({
+                            name: tool.name || '',
+                            icon: tool.icon || '',
+                            url: tool.url || '',
+                            desc: tool.desc || '',
+                            category: category.name || '默认'
+                        });
+                    });
+                }
+            });
+            
+            // 确保至少有一个分区
+            if (categories.length === 0) {
+                categories = ["默认"];
+            }
+        } else if (config.navList && Array.isArray(config.navList)) {
+            // 兼容旧格式（没有分区的配置）
+            config.navList.forEach(item => {
+                navList.push({
+                    name: item.name || '',
+                    icon: item.icon || '',
+                    url: item.url || '',
+                    desc: item.desc || '',
+                    category: "默认"
+                });
+            });
+        }
+        
+        // 重新渲染界面
+        renderCategories();
+        renderItems();
+    }
+
+    // 导出当前配置（预览）
+    function exportConfig() {
+        const config = getCurrentConfig();
+        const configStr = JSON.stringify(config, null, 2);
+        
+        // 在新窗口中显示配置
+        const newWindow = window.open('', '_blank');
+        newWindow.document.write(`
+            <html>
+                <head><title>当前配置预览</title></head>
+                <body>
+                    <h2>当前配置预览</h2>
+                    <pre style="background:#f5f5f5;padding:20px;border-radius:5px;overflow:auto">${configStr}</pre>
+                    <button onclick="window.close()">关闭</button>
+                </body>
+            </html>
+        `);
+    }
+
+    // 重置为默认
+    function resetToDefault() {
+        if (confirm('确定要重置为默认配置吗？所有当前数据将丢失！')) {
+            categories = ["默认"];
+            navList = [];
+            document.getElementById('avatar').value = '';
+            document.getElementById('nickname').value = '';
+            document.getElementById('motto').value = '';
+            renderCategories();
+            renderItems();
+            alert('已重置为默认状态');
+        }
+    }
+
+    // 获取当前配置
+    function getCurrentConfig() {
+        // 按分区分组工具
+        const groupedData = {};
+        navList.forEach(item => {
+            if (!groupedData[item.category]) {
+                groupedData[item.category] = {
+                    name: item.category,
+                    icon: "",
+                    tools: []
+                };
+            }
+            groupedData[item.category].tools.push({
+                name: item.name,
+                icon: item.icon,
+                url: item.url,
+                desc: item.desc
+            });
+        });
+
+        // 设置分区图标（使用第一个工具的图标）
+        Object.keys(groupedData).forEach(cat => {
+            if (groupedData[cat].tools.length > 0) {
+                groupedData[cat].icon = groupedData[cat].tools[0].icon;
+            }
+        });
+
+        // 限制分区数量（最多100个）
+        const finalCategories = Object.values(groupedData).slice(0, 100);
+
+        return {
+            site: {
+                avatar: document.getElementById("avatar").value,
+                nickname: document.getElementById("nickname").value,
+                motto: document.getElementById("motto").value
+            },
+            categories: finalCategories
+        };
+    }
+
+    // 保存并下载
+    function saveAndDownload() {
+        const data = getCurrentConfig();
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "config.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        alert("下载完成！请上传 config.json 到网站根目录");
+    }
+
+    // 密码功能
+    function checkPasswordAndSave(){
+        document.getElementById("pwdModal").style.display = "flex";
+    }
+    function closePwd(){
+        document.getElementById("pwdModal").style.display = "none";
+    }
+    function checkPassword(){
+        const val = document.getElementById("pwdInput").value;
+        if(val === PASSWORD){
+            closePwd();
+            saveAndDownload();
+        }else{
+            alert("密码错误");
+        }
+    }
+
+    // 初始化
+    function init() {
+        renderCategories();
+        renderItems();
+    }
+
+    init();
+</script>
+</body>
+</html>
